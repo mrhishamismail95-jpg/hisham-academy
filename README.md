@@ -56,108 +56,91 @@ AUTH_URL=http://localhost:4000
 NEXT_PUBLIC_CREATE_ENV=PRODUCTION
 ```
 
-> **مهم:** لا ترفع ملف `.env` إلى Git أبدًا. الـ `.gitignore` يمنع ذلك.
+> **مهم:** لا ترفع ملف `.env` إلى Git أبدًا.
 
 ### 3. تثبيت وتشغيل
 
 ```bash
 cd apps/web
 bun install
-bun run migrate   # بعد أخذ نسخة احتياطية من قاعدة البيانات
+bun run migrate
 bun run dev
 ```
 
-التطبيق يعمل عادة على المنفذ الذي يظهره React Router (غالبًا 4000 أو 5173).
-
 ### 4. ترحيلات قاعدة البيانات
-
-نفّذ بالترتيب (بعد نسخة احتياطية):
 
 1. `db/migrations/20261124_booking_system.sql`
 2. `db/migrations/20261124_booking_hardening.sql`
 3. `db/migrations/20261125_uploaded_files.sql`
 
-تأكد أن أنواع `students.id` و `teachers.id` متوافقة مع `BIGINT`.
-
-أو:
-
-```bash
-cd apps/web && bun run migrate
-```
+أو: `cd apps/web && bun run migrate`
 
 ### 5. البناء والإنتاج
 
 ```bash
-cd apps/web
-bun run build
-bun run start
+cd apps/web && bun run build && bun run start
 ```
 
-**Docker** (من جذر المشروع):
+**Docker:**
 
 ```bash
 docker build -t hisham-academy .
 docker run -p 3000:3000 --env-file apps/web/.env hisham-academy
 ```
 
-## هيكل المشروع
+## النشر على Vercel
 
-```
-hisham-academy/
-├── apps/
-│   ├── web/                    # تطبيق الويب (الأساسي)
-│   │   ├── src/
-│   │   │   ├── app/            # الصفحات + API routes
-│   │   │   ├── components/     # admin / teacher / student
-│   │   │   └── utils/          # session, apiPolicy, ...
-│   │   ├── scripts/
-│   │   ├── .env.example
-│   │   └── package.json
-│   └── mobile/                 # تطبيق Expo
-├── db/migrations/              # ترحيلات SQL
-├── shared/                     # كود مشترك
-├── Dockerfile
-├── BOOKING_SYSTEM_SETUP.md
-├── IMPLEMENTATION_NOTES_AR.md
-└── README.md
-```
+### تحذير مهم عن المعمارية
 
-## الأمان
+هذا المشروع يعمل حالياً كـ **خادم Node طويل الأمد** عبر `react-router-hono-server`.
 
-- كل مسارات `/api/*` محمية بسياسة مركزية (`apps/web/src/utils/apiPolicy.js`)
-- الجلسات موقّعة بـ `ACADEMY_SESSION_SECRET`
-- رفع الملفات: فحص النوع من المحتوى + يتطلب جلسة
-- تسجيل الدخول محدود بعدد المحاولات
-- لا أسرار في الكود
+Vercel يعتمد على **Serverless Functions**. لذلك:
 
-## الاختبارات
+| المنصة | التوافق | ملاحظة |
+|--------|---------|--------|
+| **Railway / Render / Fly.io / Docker** | ممتاز | الأنسب بدون تعديل كبير |
+| **Vercel** | محدود | يحتاج تكييف مع `@vercel/react-router` أو Web Handler |
+
+### خطوات ربط Vercel (بعد رفع الكود الكامل)
+
+1. [vercel.com](https://vercel.com) → **Add New Project** → استورد `hisham-academy`.
+2. **Root Directory** = `apps/web`.
+3. **Framework Preset** = Other.
+4. أضف المتغيرات من `apps/web/.env.vercel.example`:
+   - `DATABASE_URL`
+   - `ACADEMY_SESSION_SECRET`
+   - `AUTH_SECRET`
+   - `AUTH_URL` = رابط المشروع على Vercel
+   - `NEXT_PUBLIC_CREATE_ENV=PRODUCTION`
+5. Deploy.
+
+إذا فشل البناء: استخدم **Railway** أو **Render** مع الـ Dockerfile (موصى به).
+
+### GitHub Action لـ Vercel (اختياري)
+
+`.github/workflows/deploy-vercel.yml` يحتاج الأسرار:
+`VERCEL_TOKEN` · `VERCEL_ORG_ID` · `VERCEL_PROJECT_ID`
+
+### بديل موصى به: Railway
 
 ```bash
-cd apps/web
-bun run test
+railway up
 ```
-
-## ملاحظات
-
-- راجع `IMPLEMENTATION_NOTES_AR.md` و `BOOKING_SYSTEM_SETUP.md` للتفاصيل التقنية عن نظام الحجز والحماية.
-- بعض الملفات تحت `__create` جزء من بنية الخادم (Hono + Auth) وما زالت مستخدمة.
-- تطبيق الجوال يحتاج إعداد EAS منفصل.
 
 ## GitHub Actions (CI)
 
-يتم تشغيل الفحوصات تلقائياً على كل push و Pull Request إلى `main`:
-
 | Workflow | الوظيفة |
 |----------|--------|
-| **CI** | تثبيت الاعتماديات، اختبارات الوحدة (Vitest)، typecheck، ومحاولة البناء |
-| **Migrations Check** | التحقق من ملفات SQL عند تغيير الترحيلات |
+| **CI** | اختبارات + typecheck + build |
+| **Migrations Check** | فحص ملفات SQL |
+| **Deploy to Vercel** | نشر اختياري (يحتاج أسرار) |
 
-يمكن تشغيلها يدوياً من تبويب **Actions** في المستودع.
+## الأمان
+
+- حماية مركزية لـ `/api/*`
+- جلسات HttpOnly موقّعة
+- لا أسرار في الكود
 
 ## الترخيص
 
-MIT License — انظر ملف `LICENSE`.
-
----
-
-**تم تجهيز هذا المستودع للنشر على GitHub مع تنظيف الأسرار وملفات البيئة وملفات البناء.**
+MIT — انظر `LICENSE`.
