@@ -1,0 +1,34 @@
+name: Migrations Check
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'db/migrations/**'
+      - 'apps/web/scripts/migrate.mjs'
+
+jobs:
+  validate:
+    name: Validate SQL migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: List migrations in order
+        run: |
+          echo "Migration order:"
+          ls -1 db/migrations/*.sql | sort
+
+      - name: Basic SQL safety checks
+        run: |
+          set -e
+          for f in db/migrations/*.sql; do
+            echo "==> $f"
+            # Must be non-empty
+            test -s "$f"
+            # Prefer idempotent patterns
+            if ! grep -qE 'IF NOT EXISTS|IF EXISTS|CREATE TABLE|CREATE INDEX|ALTER TABLE|UPDATE ' "$f"; then
+              echo "::warning file=$f::No common DDL patterns found – double-check content"
+            fi
+          done
+          echo "Validation finished"
