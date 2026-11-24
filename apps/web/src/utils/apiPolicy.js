@@ -50,48 +50,44 @@ export function evaluateApiAccess(method, path, session, query = new URLSearchPa
   if (PUBLIC.some((r) => matches(r, method) && r[1].test(path))) return null;
 
   if (!session) return { status: 401, error: "سجل الدخول مرة أخرى لإكمال العملية" };
-
   const role = session.role;
   if (role === "admin") return null;
 
-  if (ADMIN_ONLY.some((r) => matches(r, method) && r[1].test(path))) {
-    return { status: 403, error: "غير مصرح" };
-  }
+  const deny = { status: 403, error: "ليست لديك صلاحية لهذه العملية" };
+  if (ADMIN_ONLY.some((r) => matches(r, method) && r[1].test(path))) return deny;
+  const staff = role === "teacher";
 
-  if (role === "teacher") {
-    if (STAFF_WRITE.some((re) => re.test(path)) && WRITE.has(method)) return null;
-    if (STAFF_READ.some((re) => re.test(path))) return null;
-    if (ANY_ROLE.some((re) => re.test(path))) return null;
-    // teachers can read most academy data related to their work
-    if (/^\/academy(\/|$)/.test(path) && method === "GET") return null;
-    if (/^\/teacher(\/|$)/.test(path)) return null;
-    return { status: 403, error: "غير مصرح" };
+  // Students/parents may only touch their own records (session.id = student id).
+  if (!staff) {
+    const own = (v) => v != null && String(v) === String(session.id);
+    const m = path.match(/^\/academy\/students\/([^/]+)$/);
+    if (m && !own(m[1])) return deny;
+    if (m) return method === "GET" ? null : deny;
+    if (/^\/academy\/students$/.test(path)) return deny;
+    if (/^\/(academy\/attendance|academy\/payments)$/.test(path) && !own(query.get("studentId"))) return deny;
+    if (/^\/teacher\/messages$/.test(path)) {
+      if (method === "GET" && !(own(query.get("user_id")) && query.get("user_type") === role)) return deny;
+      if (method === "DELETE") return deny;
+    }
+    if (/^\/teacher\/attendance$/.test(path)) return deny;
   }
-
-  // student / parent
   if (ANY_ROLE.some((re) => re.test(path))) return null;
-  if (/^\/students\//.test(path) && method === "GET") return null; // ownership checked in handlers
-  if (/^\/academy\/settings$/.test(path) && method === "GET") return null;
 
-  return { status: 403, error: "غير مصرح" };
+  if (STAFF_READ.some((re) => re.test(path)) && !staff) return deny;
+  if (WRITE.has(method) && STAFF_WRITE.some((re) => re.test(path)) && !staff) return deny;
+  return null; // authenticated read of other endpoints
 }
 
-/**
- * Simple in-memory rate limit for login attempts (per IP).
- * For multi-instance deployments replace with Redis.
- */
-const loginAttempts = new Map();
-
-export function tooManyAttempts(ip, limit = 10, windowMs = 15 * 60 * 1000) {
-  const now = Date.now();
-  const entry = loginAttempts.get(ip) || { count: 0, reset: now + windowMs };
-  if (now > entry.reset) {
-    entry.count = 0;
-    entry.reset = now + windowMs;
+// ── Login brute-force limiter (in-memory, per process) ───────────────────────
+const attempts = new Map();
+export function tooManyAttempts(key, { max = 10, windowMs = 15 * 60 * 1000, now = Date.now() } = {}) {
+  const entry = attempts.get(key);
+  if (!entry || now - entry.start > windowMs) {
+    attempts.set(key, { start: now, count: 1 });
+    return false;
   }
   entry.count += 1;
-  loginAttempts.set(ip, entry);
-  return entry.count > limit;
+  if (attempts.size > 5000) for (const [k, v] of attempts) if (now - v.start > windowMs) attempts.delete(k);
+  return entry.count > max;
 }
-
-export { PUBLIC, ADMIN_ONLY };
+export const LOGIN_PATHS = /^\/(academy\/auth|admins\/auth)$/;
