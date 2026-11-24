@@ -1,0 +1,14 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Health check path (we added /api/health)
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# Optional: run migrations once per deploy as a release step
+# Uncomment after DATABASE_URL is set in Railway variables:
+# releaseCommand = "cd apps/web && node scripts/migrate.mjs"

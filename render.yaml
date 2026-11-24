@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: hisham-academy
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL
+        sync: false
+      - key: ACADEMY_SESSION_SECRET
+        generateValue: true
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: AUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_CREATE_ENV
+        value: PRODUCTION
+      - key: CORS_ORIGINS
+        sync: false
