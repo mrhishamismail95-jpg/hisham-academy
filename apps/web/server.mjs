@@ -17,6 +17,7 @@ function readSession(req) { const token = (req.headers.cookie || '').split(';').
 function clearSessionCookie() { const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''; return `${COOKIE_NAME}=; HttpOnly; Path=/; SameSite=Lax${secure}; Max-Age=0`; }
 function verifyPassword(password, stored) { const [, salt, expected] = String(stored || '').split('$'); if (!salt || !expected) return false; const actual = scryptSync(password, salt, 64).toString('hex'); return actual.length === expected.length && timingSafeEqual(Buffer.from(actual), Buffer.from(expected)); }
 function requireAdminSession(req, res) { const session = readSession(req); if (!session || session.role !== 'admin') { send(res, 401, { error: 'يجب تسجيل الدخول كمدير' }); return null; } return session; }
+async function requirePermission(req, res, permission) { const session = readSession(req); if (!session) { send(res, 401, { error: 'يجب تسجيل الدخول' }); return null; } if (!sql) { send(res, 503, { error: 'DATABASE_URL غير مضبوط' }); return null; } const rows = await sql`SELECT role, is_active FROM academy_users WHERE id = ${Number(session.id)} LIMIT 1`; const user = rows[0]; if (!user || !user.is_active) { send(res, 401, { error: 'الحساب غير نشط' }); return null; } if (user.role === 'admin') return session; const roles = await sql`SELECT permissions FROM academy_roles WHERE role_key = ${user.role} LIMIT 1`; const permissions = Array.isArray(roles[0]?.permissions) ? roles[0].permissions : []; if (!permissions.includes(permission)) { send(res, 403, { error: 'لا تملك الصلاحية المطلوبة', permission }); return null; } return session; }
 const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.css':'text/css; charset=utf-8', '.json':'application/json; charset=utf-8', '.svg':'image/svg+xml', '.png':'image/png', '.jpg':'image/jpeg', '.ico':'image/x-icon' };
 
 async function fileResponse(file) {
@@ -27,11 +28,24 @@ async function body(req) { let raw = ''; for await (const chunk of req) raw += c
 function requireDb(res) { if (!sql) { send(res, 503, { error: 'DATABASE_URL غير مضبوط. أضف متغير قاعدة البيانات ثم شغّل migrations.' }); return false; } return true; }
 
 async function handleApi(req, res, url) {
-  if (url.pathname === '/api/auth/me' && req.method === 'GET') { const session = readSession(req); return send(res, 200, { authenticated: Boolean(session), user: session }); }
+  if (url.pathname === '/api/auth/me' && req.method === 'GET') { const session = readSession(req); if (!session || !sql) return send(res, 200, { authenticated: Boolean(session), user: session }); const rows = await sql`SELECT id, full_name, email, role, is_active FROM academy_users WHERE id = ${Number(session.id)} LIMIT 1`; const user = rows[0]; const active = Boolean(user?.is_active); return send(res, 200, { authenticated: active, user: active ? { id: String(user.id), full_name: user.full_name, email: user.email, role: user.role } : null }); }
   if (url.pathname === '/api/auth/logout' && req.method === 'POST') { res.setHeader('Set-Cookie', clearSessionCookie()); return send(res, 200, { ok: true }); }
   if (url.pathname === '/api/auth/login' && req.method === 'POST') {
     if (!requireDb(res)) return true;
     try { const input = await body(req); const email = String(input.email || '').trim().toLowerCase(); const password = String(input.password || ''); const rows = await sql`SELECT id, full_name, email, password_hash, role FROM academy_users WHERE LOWER(email) = ${email} AND is_active = TRUE LIMIT 1`; const user = rows[0]; if (!user || !verifyPassword(password, user.password_hash)) return send(res, 401, { error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' }); await sql`UPDATE academy_users SET last_login_at = NOW() WHERE id = ${user.id}`; res.setHeader('Set-Cookie', makeSessionCookie(user)); return send(res, 200, { ok: true, user: { id: user.id, full_name: user.full_name, email: user.email, role: user.role } }); } catch (error) { return send(res, 400, { error: 'تعذر تسجيل الدخول', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/roles' && req.method === 'GET') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'users.view'))) return true;
+    try { const roles = await sql`SELECT role_key, name, permissions FROM academy_roles ORDER BY id`; return send(res, 200, { roles }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة الأدوار', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/users' && req.method === 'GET') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'users.view'))) return true;
+    try { const users = await sql`SELECT id, full_name, email, role, is_active, last_login_at, created_at FROM academy_users ORDER BY created_at DESC`; return send(res, 200, { users }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة المستخدمين', detail: error.message }); }
+  }
+  const userMatch = url.pathname.match(/^\/api\/academy\/users\/(\d+)$/);
+  if (userMatch && req.method === 'PATCH') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'users.manage'))) return true;
+    try { const input = await body(req); const id = Number(userMatch[1]); const role = input.role === undefined ? null : String(input.role); if (role) { const valid = await sql`SELECT 1 FROM academy_roles WHERE role_key = ${role} LIMIT 1`; if (!valid[0]) return send(res, 422, { error: 'الدور غير صالح' }); } const rows = await sql`UPDATE academy_users SET full_name = COALESCE(${input.fullName || null}, full_name), email = COALESCE(${input.email ? String(input.email).trim().toLowerCase() : null}, email), role = COALESCE(${role}, role), is_active = COALESCE(${input.isActive === undefined ? null : Boolean(input.isActive)}, is_active), updated_at = NOW() WHERE id = ${id} RETURNING id, full_name, email, role, is_active, last_login_at, created_at`; if (!rows[0]) return send(res, 404, { error: 'المستخدم غير موجود' }); return send(res, 200, { user: rows[0] }); } catch (error) { return send(res, 400, { error: 'تعذر تعديل المستخدم', detail: error.message }); }
   }
   if (url.pathname === '/api/health') return send(res, 200, { ok: true, service: 'hisham-academy', database: Boolean(sql), time: new Date().toISOString() });
   if (url.pathname === '/api/academy/packages' && req.method === 'GET') {
@@ -39,16 +53,16 @@ async function handleApi(req, res, url) {
     try { const packages = await sql`SELECT id, name, description, sessions_count, price, currency, is_featured, is_active, sort_order FROM academy_packages WHERE is_active = TRUE ORDER BY sort_order, id`; return send(res, 200, { packages }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة الباقات', detail: error.message }); }
   }
   if (url.pathname === '/api/academy/packages' && req.method === 'POST') {
-    if (!requireDb(res) || !requireAdminSession(req, res)) return true;
+    if (!requireDb(res) || !(await requirePermission(req, res, 'packages.manage'))) return true;
     try { const input = await body(req); const rows = await sql`INSERT INTO academy_packages (name, description, sessions_count, price, currency, is_featured, sort_order) VALUES (${String(input.name || '').trim()}, ${input.description || null}, ${Number(input.sessionsCount || 4)}, ${Number(input.price || 0)}, ${input.currency || 'SAR'}, ${Boolean(input.isFeatured)}, ${Number(input.sortOrder || 0)}) RETURNING *`; return send(res, 201, { package: rows[0] }); } catch (error) { return send(res, 400, { error: 'تعذر حفظ الباقة', detail: error.message }); }
   }
   const packageMatch = url.pathname.match(/^\/api\/academy\/packages\/(\d+)$/);
   if (packageMatch && req.method === 'DELETE') {
-    if (!requireDb(res) || !requireAdminSession(req, res)) return true;
+    if (!requireDb(res) || !(await requirePermission(req, res, 'packages.manage'))) return true;
     try { await sql`UPDATE academy_packages SET is_active = FALSE, updated_at = NOW() WHERE id = ${Number(packageMatch[1])}`; return send(res, 200, { ok: true }); } catch (error) { return send(res, 400, { error: 'تعذر إيقاف الباقة', detail: error.message }); }
   }
   if (packageMatch && req.method === 'PATCH') {
-    if (!requireDb(res) || !requireAdminSession(req, res)) return true;
+    if (!requireDb(res) || !(await requirePermission(req, res, 'packages.manage'))) return true;
     try { const input = await body(req); const rows = await sql`UPDATE academy_packages SET name = COALESCE(${input.name || null}, name), description = COALESCE(${input.description || null}, description), sessions_count = COALESCE(${input.sessionsCount ? Number(input.sessionsCount) : null}, sessions_count), price = COALESCE(${input.price !== undefined ? Number(input.price) : null}, price), is_featured = COALESCE(${input.isFeatured === undefined ? null : Boolean(input.isFeatured)}, is_featured), updated_at = NOW() WHERE id = ${Number(packageMatch[1])} RETURNING *`; return send(res, 200, { package: rows[0] }); } catch (error) { return send(res, 400, { error: 'تعذر تعديل الباقة', detail: error.message }); }
   }
   if (url.pathname === '/api/academy/registrations' && req.method === 'POST') {
@@ -65,7 +79,7 @@ async function handleApi(req, res, url) {
     } catch (error) { return send(res, 400, { error: 'تعذر حفظ طلب التسجيل', detail: error.message }); }
   }
   if (url.pathname === '/api/academy/registrations' && req.method === 'GET') {
-    if (!requireDb(res) || !requireAdminSession(req, res)) return true;
+    if (!requireDb(res) || !(await requirePermission(req, res, 'registrations.view'))) return true;
     try { const registrations = await sql`SELECT r.*, p.name AS package_name FROM registrations r LEFT JOIN academy_packages p ON p.id = r.package_id ORDER BY r.created_at DESC LIMIT 200`; return send(res, 200, { registrations }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة طلبات التسجيل', detail: error.message }); }
   }
   return false;
