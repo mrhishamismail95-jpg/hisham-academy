@@ -1,0 +1,1 @@
+{"routes":[{"path":"/","title":"لوحة التحكم"},{"path":"/students","title":"الطلاب"},{"path":"/teachers","title":"المعلمون"},{"path":"/sessions","title":"الحصص والحجوزات"},{"path":"/payments","title":"المدفوعات"},{"path":"/attendance","title":"الحضور"},{"path":"/settings","title":"الإعدادات"}]}
