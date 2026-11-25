@@ -67,6 +67,33 @@ Root Directory عند التجربة: `apps/web`.
 
 لا ترفع `.env`. استخدم `.env.example` و `.env.deploy.example` كقوالب فقط.
 
+## ربط التسجيل والباقات بقاعدة PostgreSQL
+
+بعد ضبط `DATABASE_URL`، شغّل الترحيلات من مجلد التطبيق:
+
+```bash
+cd apps/web
+npm install
+npm run migrate
+npm run build
+npm start
+```
+
+ينشئ آخر migration جدولين: `registrations` لطلبات الطلاب وأولياء الأمور والمعلمين، و`academy_packages` للباقات والأسعار وعدد الحصص والعملات وحالة الظهور. الصفحة الرئيسية تجلب الباقات النشطة تلقائياً، ونموذج التسجيل يحفظ كل طلب مع كود مثل `HA-XXXXXX`.
+
+واجهات API المتاحة:
+
+```text
+GET    /api/academy/packages          الباقات النشطة للصفحة العامة
+POST   /api/academy/registrations     حفظ نموذج التسجيل العام
+GET    /api/academy/registrations     قراءة الطلبات للإدارة
+POST   /api/academy/packages          إضافة باقة
+PATCH  /api/academy/packages/:id      تعديل باقة
+DELETE /api/academy/packages/:id      إخفاء باقة
+```
+
+ضع `ADMIN_API_KEY` في بيئة الخادم لحماية عمليات إدارة الباقات وقراءة الطلبات. يظل جلب الباقات وتسجيل الطلبات متاحين للصفحة العامة. لاحقاً يُفضّل استبدال مفتاح الإدارة بتسجيل الدخول والجلسة الموقعة الموجودة في المشروع.
+
 ## الترخيص
 
 MIT — انظر `LICENSE`.
