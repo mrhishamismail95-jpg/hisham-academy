@@ -8,7 +8,8 @@
     "start": "node server.mjs",
     "test": "vitest run",
     "migrate": "node scripts/migrate.mjs",
-    "typecheck": "tsc --noEmit --allowJs --checkJs false"
+    "typecheck": "tsc --noEmit --allowJs --checkJs false",
+    "create-admin": "node scripts/create-admin.mjs"
   },
   "description": "Hisham Academy - Academy management platform (admin, teachers, students, bookings)",
   "version": "1.0.0",

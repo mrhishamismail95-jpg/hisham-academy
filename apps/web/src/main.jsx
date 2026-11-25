@@ -21,17 +21,22 @@ function App() {
   const [page, setPage] = useState(window.location.pathname === '/' ? 'public' : 'overview');
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
+  const [auth, setAuth] = useState(null);
+  const [authLoading, setAuthLoading] = useState(window.location.pathname === '/');
+  useEffect(() => { if (page === 'public') return; fetch('/api/auth/me').then(r => r.json()).then(data => setAuth(data.authenticated ? data.user : null)).catch(() => setAuth(null)).finally(() => setAuthLoading(false)); }, [page]);
   const title = page === 'public' ? 'الموقع العام' : (nav.find(([key]) => key === page)?.[1] || 'نظرة عامة');
   const filtered = useMemo(() => students.filter(s => `${s.name} ${s.subject}`.includes(query)), [query]);
   const toast = (message) => { setNotice(message); setTimeout(() => setNotice(''), 2600); };
 
   if (page === 'public') return <><PublicSite onDashboard={() => setPage('overview')} onToast={toast} />{notice && <div className="toast">✓ {notice}</div>}</>;
+  if (authLoading) return <div className="auth-loading">جارٍ التحقق من الجلسة...</div>;
+  if (!auth) return <AdminLogin onSuccess={setAuth} />;
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">هـ</div><div><strong>هشام أكاديمي</strong><small>منصة التعليم الذكي</small></div></div>
       <div className="profile-card"><div className="avatar dark">هـ</div><div><b>هشام إسماعيل</b><small>مدير الأكاديمية</small></div><span className="online-dot" /></div>
       <nav><div className="nav-label">القائمة الرئيسية</div>{nav.map(([key, label, icon]) => <button key={key} className={page === key ? 'nav-item active' : 'nav-item'} onClick={() => setPage(key)}><span className="nav-icon">{icon}</span><span>{label}</span>{key === 'payments' && <em>3</em>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="help-box"><span>؟</span><div><b>هل تحتاج للمساعدة؟</b><small>تواصل مع الدعم الفني</small></div></div><button className="logout" onClick={() => toast('تم تسجيل الخروج من الوضع التجريبي')}>↪ <span>تسجيل الخروج</span></button></div>
+      <div className="sidebar-bottom"><div className="help-box"><span>؟</span><div><b>هل تحتاج للمساعدة؟</b><small>تواصل مع الدعم الفني</small></div></div><button className="logout" onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); setAuth(null); }}>↪ <span>تسجيل الخروج</span></button></div>
     </aside>
     <main className="main">
       <header className="topbar"><div className="breadcrumb"><span>الرئيسية</span><b>/</b><strong>{title}</strong></div><div className="top-actions"><label className="search"><span>⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder="ابحث عن طالب، معلم..." /></label><button className="icon-button" onClick={() => toast('لا توجد إشعارات جديدة')} aria-label="الإشعارات">♢<i /></button><div className="mini-avatar">هـ</div></div></header>
@@ -41,6 +46,12 @@ function App() {
     </main>
     {notice && <div className="toast">✓ {notice}</div>}
   </div>;
+}
+
+function AdminLogin({ onSuccess }) {
+  const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [loading, setLoading] = useState(false); const [error, setError] = useState('');
+  const submit = async (event) => { event.preventDefault(); setLoading(true); setError(''); try { const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'تعذر تسجيل الدخول'); onSuccess(data.user); } catch (e) { setError(e.message); } finally { setLoading(false); } };
+  return <div className="login-screen"><div className="login-card"><div className="brand-mark">هـ</div><h1>تسجيل دخول الإدارة</h1><p>أدخل بيانات حساب Admin للوصول إلى لوحة الأكاديمية.</p><form onSubmit={submit}><label>البريد الإلكتروني<input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="admin@example.com" autoComplete="username" /></label><label>كلمة المرور<input type="password" required value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••••" autoComplete="current-password" /></label>{error && <div className="login-error">{error}</div>}<button className="primary" disabled={loading}>{loading ? 'جارٍ تسجيل الدخول...' : 'دخول آمن'}</button></form><a href="/">العودة إلى الصفحة العامة</a></div></div>;
 }
 
 function PublicSite({ onDashboard, onToast }) {
@@ -73,13 +84,12 @@ function Stat({ label, value, unit, delta, note, tone, icon }) { return <div cla
 function PackageManager({ onToast }) {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState({ name: '', description: '', sessionsCount: 4, price: '' });
-  const [adminKey, setAdminKey] = useState('');
   const [loading, setLoading] = useState(true);
   const load = () => fetch('/api/academy/packages').then(r => r.json()).then(data => setItems(data.packages || [])).catch(() => onToast('تعذر قراءة الباقات؛ تحقق من DATABASE_URL')).finally(() => setLoading(false));
   useEffect(load, []);
-  const add = async (event) => { event.preventDefault(); if (!form.name || !form.price) return onToast('اسم الباقة والسعر مطلوبان'); const response = await fetch('/api/academy/packages', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(adminKey ? { 'x-admin-key': adminKey } : {}) }, body: JSON.stringify(form) }); if (!response.ok) return onToast('تعذر حفظ الباقة'); setForm({ name: '', description: '', sessionsCount: 4, price: '' }); onToast('تم حفظ الباقة'); load(); };
-  const remove = async (id) => { if (!confirm('هل تريد إخفاء هذه الباقة من الصفحة العامة؟')) return; const response = await fetch(`/api/academy/packages/${id}`, { method: 'DELETE', headers: adminKey ? { 'x-admin-key': adminKey } : {} }); if (response.ok) { onToast('تم إخفاء الباقة'); load(); } else onToast('تعذر إخفاء الباقة'); };
-  return <div className="package-manager"><div className="panel-head"><div><h2>إدارة الباقات والأسعار</h2><p>أي تعديل هنا يظهر تلقائياً في الصفحة العامة بعد الحفظ.</p></div></div><div className="admin-key-row"><label>مفتاح الإدارة (اختياري)<input type="password" value={adminKey} onChange={e => setAdminKey(e.target.value)} placeholder="اتركه فارغاً إذا لم يتم تفعيله" /></label></div><form className="package-form" onSubmit={add}><input placeholder="اسم الباقة" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /><input placeholder="الوصف" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /><input type="number" min="1" placeholder="عدد الحصص" value={form.sessionsCount} onChange={e => setForm({ ...form, sessionsCount: e.target.value })} /><input type="number" min="0" step="0.01" placeholder="السعر بالر.س" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /><button className="primary" type="submit">＋ حفظ الباقة</button></form><div className="managed-packages">{loading ? <p>جارٍ تحميل الباقات...</p> : items.map(item => <div className="managed-package" key={item.id}><div><b>{item.name}</b><span>{item.description || 'بدون وصف'} · {item.sessions_count} حصص</span></div><strong>{Number(item.price).toLocaleString('ar-SA')} {item.currency === 'SAR' ? 'ر.س' : item.currency}</strong><button className="danger-button" onClick={() => remove(item.id)}>إخفاء</button></div>)}</div></div>;
+  const add = async (event) => { event.preventDefault(); if (!form.name || !form.price) return onToast('اسم الباقة والسعر مطلوبان'); const response = await fetch('/api/academy/packages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) }); if (!response.ok) return onToast('تعذر حفظ الباقة'); setForm({ name: '', description: '', sessionsCount: 4, price: '' }); onToast('تم حفظ الباقة'); load(); };
+  const remove = async (id) => { if (!confirm('هل تريد إخفاء هذه الباقة من الصفحة العامة؟')) return; const response = await fetch(`/api/academy/packages/${id}`, { method: 'DELETE' }); if (response.ok) { onToast('تم إخفاء الباقة'); load(); } else onToast('تعذر إخفاء الباقة'); };
+  return <div className="package-manager"><div className="panel-head"><div><h2>إدارة الباقات والأسعار</h2><p>أي تعديل هنا يظهر تلقائياً في الصفحة العامة بعد الحفظ.</p></div></div><form className="package-form" onSubmit={add}><input placeholder="اسم الباقة" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /><input placeholder="الوصف" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /><input type="number" min="1" placeholder="عدد الحصص" value={form.sessionsCount} onChange={e => setForm({ ...form, sessionsCount: e.target.value })} /><input type="number" min="0" step="0.01" placeholder="السعر بالر.س" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} /><button className="primary" type="submit">＋ حفظ الباقة</button></form><div className="managed-packages">{loading ? <p>جارٍ تحميل الباقات...</p> : items.map(item => <div className="managed-package" key={item.id}><div><b>{item.name}</b><span>{item.description || 'بدون وصف'} · {item.sessions_count} حصص</span></div><strong>{Number(item.price).toLocaleString('ar-SA')} {item.currency === 'SAR' ? 'ر.س' : item.currency}</strong><button className="danger-button" onClick={() => remove(item.id)}>إخفاء</button></div>)}</div></div>;
 }
 
 function Section({ page, students, onToast }) {
