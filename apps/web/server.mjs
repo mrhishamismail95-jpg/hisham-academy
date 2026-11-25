@@ -27,7 +27,7 @@ const mime = { '.html':'text/html; charset=utf-8', '.js':'text/javascript; chars
 async function fileResponse(file) {
   try { const info = await stat(file); if (!info.isFile()) return null; return { body: await readFile(file), type: mime[path.extname(file)] || 'application/octet-stream' }; } catch { return null; }
 }
-function send(res, status, data) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': process.env.CORS_ORIGINS || '*' }); res.end(JSON.stringify(data)); }
+function send(res, status, data) { res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'access-control-allow-origin': process.env.CORS_ORIGINS || '*' }); res.end(JSON.stringify(data)); return true; }
 async function body(req) { let raw = ''; for await (const chunk of req) raw += chunk; if (raw.length > 100_000) throw new Error('payload_too_large'); return raw ? JSON.parse(raw) : {}; }
 function requireDb(res) { if (!sql) { send(res, 503, { error: 'DATABASE_URL غير مضبوط. أضف متغير قاعدة البيانات ثم شغّل migrations.' }); return false; } return true; }
 
