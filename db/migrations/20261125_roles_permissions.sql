@@ -13,8 +13,8 @@ CREATE TABLE IF NOT EXISTS academy_roles (
 );
 
 INSERT INTO academy_roles (role_key, name, permissions, is_system) VALUES
-  ('admin', 'مدير النظام', '["users.view","users.manage","packages.manage","registrations.view","settings.manage"]', TRUE),
-  ('supervisor', 'مشرف أكاديمي', '["users.view","registrations.view","students.manage","teachers.view","sessions.manage","attendance.manage"]', TRUE),
+  ('admin', 'مدير النظام', '["users.view","users.manage","packages.manage","registrations.view","settings.manage","sessions.view","sessions.manage","payments.view","payments.manage","attendance.manage"]', TRUE),
+  ('supervisor', 'مشرف أكاديمي', '["users.view","registrations.view","students.manage","teachers.view","sessions.view","sessions.manage","attendance.manage"]', TRUE),
   ('teacher', 'معلم', '["students.view","sessions.view","attendance.manage"]', TRUE),
   ('student', 'طالب', '["sessions.view"]', TRUE),
   ('parent', 'ولي أمر', '["sessions.view"]', TRUE)

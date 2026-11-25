@@ -84,6 +84,34 @@ async function handleApi(req, res, url) {
     if (!requireDb(res) || !(await requirePermission(req, res, 'users.view'))) return true;
     try { const [users, registrations, packages, daily, types] = await Promise.all([sql`SELECT role, COUNT(*)::int AS count FROM academy_users WHERE is_active = TRUE GROUP BY role`, sql`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE created_at >= date_trunc('month', NOW()))::int AS this_month FROM registrations`, sql`SELECT COUNT(*)::int AS active FROM academy_packages WHERE is_active = TRUE`, sql`SELECT TO_CHAR(day, 'Dy') AS day, COUNT(r.id)::int AS count FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, INTERVAL '1 day') AS day LEFT JOIN registrations r ON r.created_at::date = day::date GROUP BY day ORDER BY day`, sql`SELECT request_type, COUNT(*)::int AS count FROM registrations GROUP BY request_type`]); return send(res, 200, { stats: { students: users.find(row => row.role === 'student')?.count || 0, teachers: users.find(row => row.role === 'teacher')?.count || 0, registrations: registrations[0]?.total || 0, registrationsThisMonth: registrations[0]?.this_month || 0, activePackages: packages[0]?.active || 0 }, daily, types }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة إحصائيات المنصة', detail: error.message }); }
   }
+  if (url.pathname === '/api/academy/sessions' && req.method === 'GET') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'sessions.view'))) return true;
+    try { const sessions = await sql`SELECT s.*, u.full_name AS teacher_name, COUNT(b.id)::int AS booking_count FROM academy_sessions s LEFT JOIN academy_users u ON u.id = s.teacher_id LEFT JOIN academy_bookings b ON b.session_id = s.id AND b.status = 'confirmed' WHERE s.starts_at >= NOW() - INTERVAL '30 days' GROUP BY s.id, u.full_name ORDER BY s.starts_at LIMIT 200`; return send(res, 200, { sessions }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة الحصص', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/sessions' && req.method === 'POST') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'sessions.manage'))) return true;
+    try { const input = await body(req); const rows = await sql`INSERT INTO academy_sessions (title, subject, teacher_id, starts_at, ends_at, capacity) VALUES (${String(input.title || '').trim()}, ${input.subject || null}, ${input.teacherId ? Number(input.teacherId) : null}, ${input.startsAt}, ${input.endsAt || null}, ${Number(input.capacity || 1)}) RETURNING *`; await audit(req, (readSession(req) || {}).id, 'session.create', 'session', rows[0].id, input); return send(res, 201, { session: rows[0] }); } catch (error) { return send(res, 400, { error: 'تعذر إنشاء الحصة', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/bookings' && req.method === 'GET') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'sessions.view'))) return true;
+    try { const bookings = await sql`SELECT b.*, s.title, s.starts_at FROM academy_bookings b JOIN academy_sessions s ON s.id = b.session_id ORDER BY s.starts_at DESC LIMIT 300`; return send(res, 200, { bookings }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة الحجوزات', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/payments' && req.method === 'GET') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'payments.view'))) return true;
+    try { const payments = await sql`SELECT * FROM academy_payments ORDER BY created_at DESC LIMIT 300`; return send(res, 200, { payments }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة المدفوعات', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/payments' && req.method === 'POST') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'payments.manage'))) return true;
+    try { const input = await body(req); const rows = await sql`INSERT INTO academy_payments (student_id, student_name, amount, currency, status, reference, paid_at) VALUES (${input.studentId ? Number(input.studentId) : null}, ${String(input.studentName || '').trim()}, ${Number(input.amount || 0)}, ${input.currency || 'SAR'}, ${input.status || 'paid'}, ${input.reference || null}, ${input.paidAt || new Date().toISOString()}) RETURNING *`; await audit(req, (readSession(req) || {}).id, 'payment.create', 'payment', rows[0].id, input); return send(res, 201, { payment: rows[0] }); } catch (error) { return send(res, 400, { error: 'تعذر حفظ الدفعة', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/attendance' && req.method === 'GET') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'attendance.manage'))) return true;
+    try { const attendance = await sql`SELECT a.*, s.title, s.starts_at FROM academy_attendance a LEFT JOIN academy_sessions s ON s.id = a.session_id ORDER BY a.marked_at DESC LIMIT 300`; return send(res, 200, { attendance }); } catch (error) { return send(res, 500, { error: 'تعذر قراءة الحضور', detail: error.message }); }
+  }
+  if (url.pathname === '/api/academy/attendance' && req.method === 'POST') {
+    if (!requireDb(res) || !(await requirePermission(req, res, 'attendance.manage'))) return true;
+    try { const input = await body(req); const rows = await sql`INSERT INTO academy_attendance (session_id, student_id, student_name, status) VALUES (${input.sessionId ? Number(input.sessionId) : null}, ${input.studentId ? Number(input.studentId) : null}, ${String(input.studentName || '').trim()}, ${input.status || 'present'}) ON CONFLICT (session_id, student_id) DO UPDATE SET status = EXCLUDED.status, marked_at = NOW() RETURNING *`; await audit(req, (readSession(req) || {}).id, 'attendance.mark', 'attendance', rows[0].id, input); return send(res, 201, { attendance: rows[0] }); } catch (error) { return send(res, 400, { error: 'تعذر حفظ الحضور', detail: error.message }); }
+  }
   if (url.pathname === '/api/health') return send(res, 200, { ok: true, service: 'hisham-academy', database: Boolean(sql), time: new Date().toISOString() });
   if (url.pathname === '/api/academy/packages' && req.method === 'GET') {
     if (!requireDb(res)) return true;
