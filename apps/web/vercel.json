@@ -1,6 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "bun run build",
-  "installCommand": "bun install",
-  "framework": null
+  "framework": "vite",
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
+  "outputDirectory": "build/client",
+  "rewrites": [
+    { "source": "/((?!api/health|manus-routes.json).*)", "destination": "/index.html" }
+  ]
 }
