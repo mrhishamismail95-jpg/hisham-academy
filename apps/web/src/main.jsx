@@ -18,13 +18,14 @@ const nav = [
 ];
 
 function App() {
-  const [page, setPage] = useState('overview');
+  const [page, setPage] = useState(window.location.pathname === '/' ? 'public' : 'overview');
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
-  const title = nav.find(([key]) => key === page)?.[1] || 'نظرة عامة';
+  const title = page === 'public' ? 'الموقع العام' : (nav.find(([key]) => key === page)?.[1] || 'نظرة عامة');
   const filtered = useMemo(() => students.filter(s => `${s.name} ${s.subject}`.includes(query)), [query]);
   const toast = (message) => { setNotice(message); setTimeout(() => setNotice(''), 2600); };
 
+  if (page === 'public') return <><PublicSite onDashboard={() => setPage('overview')} onToast={toast} />{notice && <div className="toast">✓ {notice}</div>}</>;
   return <div className="shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">هـ</div><div><strong>هشام أكاديمي</strong><small>منصة التعليم الذكي</small></div></div>
@@ -39,6 +40,26 @@ function App() {
       </div>
     </main>
     {notice && <div className="toast">✓ {notice}</div>}
+  </div>;
+}
+
+function PublicSite({ onDashboard, onToast }) {
+  const [role, setRole] = useState('student');
+  const [sent, setSent] = useState(false);
+  const [form, setForm] = useState({ name: '', phone: '', grade: '', package: 'الباقة القياسية' });
+  const packages = [
+    { name: 'الباقة الأساسية', sessions: '4 حصص شهرياً', price: '450', note: 'للبداية والمتابعة' },
+    { name: 'الباقة القياسية', sessions: '8 حصص شهرياً', price: '800', note: 'الأكثر اختياراً', featured: true },
+    { name: 'الباقة المكثفة', sessions: '12 حصة شهرياً', price: '1,100', note: 'تقدم أسرع واهتمام أكبر' },
+  ];
+  const submit = (event) => { event.preventDefault(); if (!form.name.trim() || !form.phone.trim()) return onToast('يرجى إدخال الاسم ورقم الهاتف'); setSent(true); };
+  return <div className="public-site">
+    <header className="public-nav"><div className="public-brand"><span>هـ</span><div><b>هشام أكاديمي</b><small>تعلم بذكاء، تقدّم بثقة</small></div></div><nav><a href="#programs">البرامج</a><a href="#prices">الأسعار</a><a href="#contact">تواصل معنا</a></nav><button className="secondary" onClick={onDashboard}>دخول لوحة الإدارة</button></header>
+    <section className="public-hero"><div className="hero-copy"><span className="public-kicker">منصة تعليمية متكاملة للطلاب وأولياء الأمور</span><h1>نحوّل كل حصة إلى <strong>خطوة نجاح</strong></h1><p>حصص مباشرة مع معلمين متميزين، متابعة حضور وتقدم واضحة، وباقات تعليمية تناسب احتياج كل طالب.</p><div className="hero-actions"><a className="primary" href="#register">ابدأ التسجيل الآن ←</a><a className="hero-link" href="#prices">شاهد الأسعار</a></div><div className="trust-row"><span><b>+500</b> طالب مستفيد</span><span><b>9.8/10</b> تقييم أولياء الأمور</span><span><b>+9</b> سنوات خبرة</span></div></div><div className="register-card" id="register"><div className="card-top"><span>التسجيل مفتوح</span><b>خطوتك الأولى تبدأ هنا</b><small>املأ البيانات وسنتواصل معك خلال 24 ساعة</small></div>{sent ? <div className="success-box"><div>✓</div><h2>تم إرسال طلبك بنجاح</h2><p>سيصلك تواصل من فريق الأكاديمية قريباً.</p><button className="secondary" onClick={() => { setSent(false); setForm({ name: '', phone: '', grade: '', package: 'الباقة القياسية' }); }}>تسجيل شخص آخر</button></div> : <form onSubmit={submit} className="register-form"><div className="role-tabs">{[['student','طالب'],['parent','ولي أمر'],['teacher','معلم']].map(([key,label]) => <button type="button" className={role === key ? 'selected' : ''} onClick={() => setRole(key)} key={key}>{label}</button>)}</div><label>الاسم الكامل<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="اكتب الاسم رباعياً" /></label><label>رقم واتساب<input required type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="05xxxxxxxx" /></label>{role !== 'teacher' ? <label>المرحلة الدراسية<select value={form.grade} onChange={e => setForm({ ...form, grade: e.target.value })}><option value="">اختر المرحلة</option><option>ابتدائي</option><option>إعدادي</option><option>ثانوي</option></select></label> : <label>المادة التي تدرّسها<input value={form.grade} onChange={e => setForm({ ...form, grade: e.target.value })} placeholder="مثال: الرياضيات" /></label>}<button className="primary" type="submit">إرسال طلب التسجيل</button><small className="form-note">لن يتم استخدام بياناتك إلا للتواصل بخصوص التسجيل.</small></form>}</div></section>
+    <section className="public-section" id="programs"><div className="section-heading"><span>لماذا هشام أكاديمي؟</span><h2>كل ما تحتاجه لتعلّم أفضل</h2><p>تجربة تعليمية تجمع بين جودة المعلم ووضوح المتابعة وسهولة التواصل.</p></div><div className="feature-grid">{[['◫','حصص مباشرة','فردية وجماعية حسب مستواك وجدولك.'],['✓','متابعة مستمرة','حضور وتقدم وتقارير واضحة لولي الأمر.'],['♧','معلمون متميزون','اختيار دقيق للمعلمين وخبرة حقيقية.'],['◈','باقات مرنة','أسعار واضحة وباقات تناسب احتياجك.']].map(([icon,title,desc]) => <div className="feature-card" key={title}><i>{icon}</i><h3>{title}</h3><p>{desc}</p></div>)}</div></section>
+    <section className="prices-section" id="prices"><div className="section-heading"><span>الباقات والأسعار</span><h2>اختر الباقة المناسبة لك</h2><p>الأسعار ظاهرة بوضوح، ويمكن تغييرها لاحقاً من إعدادات الأكاديمية.</p></div><div className="price-grid">{packages.map(pkg => <div className={pkg.featured ? 'price-card featured-price' : 'price-card'} key={pkg.name}>{pkg.featured && <b className="popular">الأكثر اختياراً</b>}<h3>{pkg.name}</h3><p>{pkg.note}</p><strong>{pkg.price} <small>ر.س / شهرياً</small></strong><div className="package-detail">✓ {pkg.sessions}</div><button className={pkg.featured ? 'primary' : 'secondary'} onClick={() => { setForm({ ...form, package: pkg.name }); document.getElementById('register')?.scrollIntoView({ behavior:'smooth' }); }}>اختر هذه الباقة</button></div>)}</div></section>
+    <section className="portal-strip"><div><span>بوابات مخصصة لكل مستخدم</span><h2>تابع رحلتك من المكان المناسب لك</h2></div><div className="portal-links"><button onClick={() => onToast('بوابة الطالب قيد التجهيز للربط بالحسابات')}>♙ بوابة الطالب</button><button onClick={() => onToast('بوابة المعلم قيد التجهيز للربط بالحسابات')}>♧ بوابة المعلم</button><button onClick={onDashboard}>▣ بوابة الإدارة</button></div></section>
+    <footer className="public-footer" id="contact"><div><b>هشام أكاديمي</b><p>تعلم بذكاء، تقدّم بثقة.</p></div><div><b>تواصل معنا</b><p>واتساب: 05 0000 0000 · الأحد–الخميس</p></div><a href="https://wa.me/966500000000" target="_blank" rel="noreferrer">تواصل عبر واتساب ↗</a></footer>
   </div>;
 }
 
